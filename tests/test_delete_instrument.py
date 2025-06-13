@@ -2,37 +2,35 @@ import pytest
 from httpx import AsyncClient, ASGITransport
 import uuid
 from app.main import app
-from app.models.user import User
-from app.models.instrument import Instrument
+from app.models.user import User as UserORM
+from app.models.instrument import Instrument as InstrumentORM
 from app.db.session import async_session_maker
 
 @pytest.mark.asyncio
-async def test_delete_instrument():
-    # Добавить админа и инструмент
+async def test_delete_instrument_admin():
     async with async_session_maker() as session:
-        await session.execute(User.__table__.delete())
-        await session.execute(Instrument.__table__.delete())
-        await session.commit()
-        admin_key = "adminkey"
-        admin = User(
-            id=str(uuid.uuid4()),
-            name="admin1",
-            role="ADMIN",
-            api_key=admin_key
-        )
-        session.add(admin)
-        session.add(Instrument(name="Удалить меня", ticker="DELME"))
+        await session.execute(InstrumentORM.__table__.delete())
+        await session.execute(UserORM.__table__.delete())
         await session.commit()
 
-    # Удалить инструмент через API
+        admin = UserORM(
+            id=str(uuid.uuid4()),
+            name="admininstr",
+            role="ADMIN",
+            api_key="adminkey"
+        )
+        instr = InstrumentORM(ticker="DELME", name="To Delete")
+        session.add_all([admin, instr])
+        await session.commit()
+
+    headers = {"Authorization": "TOKEN adminkey"}
+
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-        headers = {"Authorization": f"TOKEN {admin_key}"}
+        # Удаление
         resp = await ac.delete("/api/v1/admin/instrument/DELME", headers=headers)
         assert resp.status_code == 200
-        data = resp.json()
-        assert data["success"] is True
+        assert resp.json() == {"success": True}
 
-    # Проверить, что его больше нет
-    async with async_session_maker() as session:
-        instrument = await session.get(Instrument, "DELME")
-        assert instrument is None
+        # Повторное удаление — ошибка
+        resp_404 = await ac.delete("/api/v1/admin/instrument/DELME", headers=headers)
+        assert resp_404.status_code == 404

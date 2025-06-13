@@ -2,21 +2,21 @@ import pytest
 from httpx import AsyncClient, ASGITransport
 import uuid
 from app.main import app
-from app.models.user import User
+from app.models.user import User as UserORM
 from app.db.session import async_session_maker
 
 @pytest.mark.asyncio
 async def test_admin_delete_user():
     async with async_session_maker() as session:
-        await session.execute(User.__table__.delete())
+        await session.execute(UserORM.__table__.delete())
         await session.commit()
-        admin = User(
+        admin = UserORM(
             id=str(uuid.uuid4()),
             name="admin",
             role="ADMIN",
             api_key="adminkey"
         )
-        user = User(
+        user = UserORM(
             id=str(uuid.uuid4()),
             name="user1",
             role="USER",
@@ -33,8 +33,10 @@ async def test_admin_delete_user():
         data = resp.json()
         assert data["id"] == user.id
         assert data["name"] == "user1"
+        assert data["role"] == "USER"
+        assert data["api_key"] == "userkey"
 
     # Проверить, что юзер удалён из базы
     async with async_session_maker() as session:
-        deleted = await session.get(User, user.id)
+        deleted = await session.get(UserORM, user.id)
         assert deleted is None

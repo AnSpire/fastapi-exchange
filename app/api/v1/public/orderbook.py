@@ -1,44 +1,54 @@
-from fastapi import APIRouter, Path, Query, HTTPException, Depends
+from fastapi import APIRouter, Path, Query, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_
+from app.models.instrument import Instrument as InstrumentORM
+from app.models.order import Order as OrderORM
 from app.schemas.order import L2OrderBook, Level
-from app.models.instrument import Instrument
-from app.models.order import Order
 from app.dependencies import get_db
-from typing import List
 
 router = APIRouter()
 
-@router.get("/orderbook/{ticker}", response_model=L2OrderBook)
+@router.get(
+    "/orderbook/{ticker}",
+    response_model=L2OrderBook,
+    tags=["public"]
+)
 async def get_orderbook(
-    ticker: str = Path(...),
+    ticker: str = Path(..., pattern="^[A-Z]{2,10}$", title="Ticker"),
     limit: int = Query(10, ge=1, le=25),
     db: AsyncSession = Depends(get_db)
 ):
-    instrument = await db.get(Instrument, ticker)
+    # Проверяем, есть ли инструмент
+    instrument = await db.get(InstrumentORM, ticker)
     if not instrument:
         raise HTTPException(status_code=404, detail="Instrument not found")
 
+    # Выбираем bids (BUY) — по убыванию цены
     bids_result = await db.execute(
-        select(Order).where(
+        select(OrderORM).where(
             and_(
-                Order.ticker == ticker,
-                Order.direction == "BUY",
-                Order.status == "NEW"
+                OrderORM.ticker == ticker,
+                OrderORM.direction == "BUY",
+                OrderORM.status == "NEW"
             )
-        ).order_by(Order.price.desc()).limit(limit)
+        ).order_by(OrderORM.price.desc()).limit(limit)
     )
+    # Выбираем asks (SELL) — по возрастанию цены
     asks_result = await db.execute(
-        select(Order).where(
+        select(OrderORM).where(
             and_(
-                Order.ticker == ticker,
-                Order.direction == "SELL",
-                Order.status == "NEW"
+                OrderORM.ticker == ticker,
+                OrderORM.direction == "SELL",
+                OrderORM.status == "NEW"
             )
-        ).order_by(Order.price.asc()).limit(limit)
+        ).order_by(OrderORM.price.asc()).limit(limit)
     )
 
-    bids = [Level(price=order.price, qty=order.qty) for order, in bids_result.all()]
-    asks = [Level(price=order.price, qty=order.qty) for order, in asks_result.all()]
+    bid_levels = [
+        Level(price=order.price, qty=order.qty) for order in bids_result.scalars().all()
+    ]
+    ask_levels = [
+        Level(price=order.price, qty=order.qty) for order in asks_result.scalars().all()
+    ]
 
-    return L2OrderBook(bid_levels=bids, ask_levels=asks)
+    return L2OrderBook(bid_levels=bid_levels, ask_levels=ask_levels)
