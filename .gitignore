@@ -1,0 +1,16 @@
+# python
+__pycache__/
+*.pyc
+
+# venv
+venv/
+
+# db and logs
+*.db
+nohup*.out
+
+# archives, IDE, and misc
+*.tar
+.idea/
+.DS_Store
+tree.txt

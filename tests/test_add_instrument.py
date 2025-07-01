@@ -14,7 +14,7 @@ async def test_create_instrument_admin():
         await session.commit()
 
         admin = UserORM(
-            id=str(uuid.uuid4()),
+            id=uuid.uuid4(),   # теперь UUID, а не строка!
             name="admininstr",
             role="ADMIN",
             api_key="adminkey"
@@ -29,12 +29,19 @@ async def test_create_instrument_admin():
     }
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        # Первый вызов — инструмент успешно добавлен
         resp = await ac.post("/api/v1/admin/instrument", headers=headers, json=body)
         assert resp.status_code == 200
-        data = resp.json()
-        assert data["ticker"] == "MEMCOIN"
-        assert data["name"] == "Mem Coin"
+        assert resp.json() == {"success": True}
 
-        # Повторная вставка должна вызвать ошибку
+        # Проверим, что инструмент реально добавлен в базе
+        async with async_session_maker() as session:
+            instrument = await session.get(InstrumentORM, "MEMCOIN")
+            assert instrument is not None
+            assert instrument.ticker == "MEMCOIN"
+            assert instrument.name == "Mem Coin"
+
+        # Повторная вставка должна вызвать ошибку 400
         resp_dup = await ac.post("/api/v1/admin/instrument", headers=headers, json=body)
         assert resp_dup.status_code == 400
+        assert resp_dup.json()["detail"] == "Instrument already exists"

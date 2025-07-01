@@ -1,5 +1,4 @@
-from pydantic import BaseModel, ConfigDict, Field
-from pydantic import UUID4
+from pydantic import BaseModel, ConfigDict, Field, UUID4, constr
 from enum import Enum
 
 class UserRole(str, Enum):
@@ -7,7 +6,7 @@ class UserRole(str, Enum):
     ADMIN = "ADMIN"
 
 class NewUser(BaseModel):
-    name: str = Field(..., min_length=3)
+    name: constr(min_length=3)
     model_config = ConfigDict(extra="forbid")
 
 class User(BaseModel):

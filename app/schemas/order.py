@@ -1,7 +1,6 @@
-from pydantic import BaseModel, Field, ConfigDict
-from typing import Literal, Union
-from pydantic import UUID4
+from pydantic import BaseModel, ConfigDict, Field, UUID4, constr
 from enum import Enum
+from typing import Literal, Union, List
 from datetime import datetime
 
 class OrderStatus(str, Enum):
@@ -16,17 +15,15 @@ class Direction(str, Enum):
 
 class LimitOrderBody(BaseModel):
     direction: Direction
-    ticker: str
+    ticker: str = Field(..., pattern="^[A-Z]{2,10}$")
     qty: int = Field(..., ge=1)
-    price: int = Field(..., gt=0)  # exclusiveMinimum=0
-
+    price: int = Field(..., gt=0)
     model_config = ConfigDict(extra="forbid")
 
 class MarketOrderBody(BaseModel):
     direction: Direction
-    ticker: str
+    ticker: str = Field(..., pattern="^[A-Z]{2,10}$")
     qty: int = Field(..., ge=1)
-
     model_config = ConfigDict(extra="forbid")
 
 class LimitOrder(BaseModel):
@@ -36,7 +33,6 @@ class LimitOrder(BaseModel):
     timestamp: datetime
     body: LimitOrderBody
     filled: int = 0
-
     model_config = ConfigDict(from_attributes=True)
 
 class MarketOrder(BaseModel):
@@ -45,21 +41,17 @@ class MarketOrder(BaseModel):
     user_id: UUID4
     timestamp: datetime
     body: MarketOrderBody
-
     model_config = ConfigDict(from_attributes=True)
-from pydantic import BaseModel, Field
-
 
 class CreateOrderResponse(BaseModel):
-    success: bool = Field(True, Literal=True)
+    success: Literal[True] = True
     order_id: UUID4
-
-OrderModel = Union[LimitOrder, MarketOrder]
-
 class Level(BaseModel):
     price: int
     qty: int
 
 class L2OrderBook(BaseModel):
-    bid_levels: list[Level]
-    ask_levels: list[Level]
+    bid_levels: List[Level]
+    ask_levels: List[Level]
+
+OrderModel = Union[LimitOrder, MarketOrder]

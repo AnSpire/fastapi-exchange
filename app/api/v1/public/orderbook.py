@@ -45,10 +45,14 @@ async def get_orderbook(
     )
 
     bid_levels = [
-        Level(price=order.price, qty=order.qty) for order in bids_result.scalars().all()
+        Level(price=order.price, qty=order.qty)
+        for order in bids_result.scalars().all()
+        if order.price is not None
     ]
     ask_levels = [
-        Level(price=order.price, qty=order.qty) for order in asks_result.scalars().all()
+        Level(price=order.price, qty=order.qty)
+        for order in asks_result.scalars().all()
+        if order.price is not None
     ]
 
     return L2OrderBook(bid_levels=bid_levels, ask_levels=ask_levels)

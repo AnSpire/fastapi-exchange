@@ -17,11 +17,10 @@ from app.schemas.order import LimitOrder, MarketOrder, LimitOrderBody, MarketOrd
 from uuid import UUID
 
 def orm_to_pydantic_order(order_orm):
-    # тут предполагается, что order_orm.type - либо "LIMIT", либо "MARKET"
     base_kwargs = {
-        "id": UUID(order_orm.id),
+        "id": order_orm.id,
         "status": OrderStatus(order_orm.status),
-        "user_id": UUID(order_orm.user_id),
+        "user_id": order_orm.user_id,
         "timestamp": order_orm.timestamp,
     }
     if order_orm.type == "LIMIT":
@@ -44,6 +43,7 @@ def orm_to_pydantic_order(order_orm):
                 qty=order_orm.qty
             )
         )
+
 
 @router.post(
     "/order",
