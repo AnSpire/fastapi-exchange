@@ -1,47 +1,45 @@
-from uuid import UUID
-from fastapi import APIRouter, Path, Depends, HTTPException, Query, status, Header
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, Header, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.order import Order as OrderORM
-from app.schemas.order import (
-    LimitOrderBody, MarketOrderBody, CreateOrderResponse,
-    LimitOrder, MarketOrder, OrderStatus, OrderModel
-)
-from app.services.order_service import create_order, get_user_orders
-from app.core.security import get_current_user
+from app.schemas.order import LimitOrderBody, MarketOrderBody, CreateOrderResponse
 from app.dependencies import get_db
-from typing import List, Union
+from app.core.security import get_current_user
+from app.services.matching import match_order  # импортируем функцию
+from sqlalchemy import select, and_
+from app.services.balance_service import get_user_balances
+import uuid
+from datetime import datetime, timezone
 
 router = APIRouter()
-from app.schemas.order import LimitOrder, MarketOrder, LimitOrderBody, MarketOrderBody, OrderStatus, Direction
-from uuid import UUID
+from app.schemas.order import LimitOrder, MarketOrder, OrderStatus
 
-def orm_to_pydantic_order(order_orm):
-    base_kwargs = {
-        "id": order_orm.id,
-        "status": OrderStatus(order_orm.status),
-        "user_id": order_orm.user_id,
-        "timestamp": order_orm.timestamp,
-    }
-    if order_orm.type == "LIMIT":
-        return LimitOrder(
-            **base_kwargs,
-            body=LimitOrderBody(
-                direction=Direction(order_orm.direction),
-                ticker=order_orm.ticker,
-                qty=order_orm.qty,
-                price=order_orm.price
-            ),
-            filled=getattr(order_orm, "filled", 0)
-        )
-    else:  # MARKET
+def order_to_schema(order: OrderORM):
+    if order.type == "MARKET":
         return MarketOrder(
-            **base_kwargs,
-            body=MarketOrderBody(
-                direction=Direction(order_orm.direction),
-                ticker=order_orm.ticker,
-                qty=order_orm.qty
-            )
+            id=str(order.id),
+            status=OrderStatus(order.status),
+            user_id=str(order.user_id),
+            timestamp=order.timestamp,
+            body={
+                "direction": order.direction,
+                "ticker": order.ticker,
+                "qty": order.qty,
+                # price НЕ добавляем!
+            }
+        )
+    else:
+        return LimitOrder(
+            id=str(order.id),
+            status=OrderStatus(order.status),
+            user_id=str(order.user_id),
+            timestamp=order.timestamp,
+            filled=order.filled,
+            body={
+                "direction": order.direction,
+                "ticker": order.ticker,
+                "qty": order.qty,
+                "price": order.price,  # только для LIMIT
+            }
         )
 
 
@@ -51,59 +49,154 @@ def orm_to_pydantic_order(order_orm):
     tags=["order"]
 )
 async def post_order(
-    body: Union[LimitOrderBody, MarketOrderBody],
+    body: LimitOrderBody | MarketOrderBody,
     db: AsyncSession = Depends(get_db),
     authorization: str = Header(None),
     user=Depends(get_current_user)
-
 ):
-    order_id = await create_order(db, user.id, body)
-    return {"success": True, "order_id": order_id}
+    # === ВСТАВЬ ВОТ ЗДЕСЬ ===
 
-@router.get("/order", response_model=List[OrderModel])
+    balances = await get_user_balances(db, user.id)
+
+    if body.direction == "BUY":
+        price = getattr(body, "price", None)
+        if price is None:
+            # MARKET — ищем лучшую встречную заявку SELL
+            counter_orders = (await db.execute(
+                select(OrderORM).where(
+                    and_(
+                        OrderORM.ticker == body.ticker,
+                        OrderORM.direction == "SELL",
+                        OrderORM.status == "NEW"
+                    )
+                )
+            )).scalars().all()
+            if not counter_orders:
+                raise HTTPException(status_code=400,
+                                    detail="Нет встречных заявок для исполнения MARKET-ордерa (покупка)")
+            price = min(o.price for o in counter_orders)
+        sum_required = body.qty * price
+        if balances.get("RUB", 0) < sum_required:
+            raise HTTPException(status_code=400, detail="Недостаточно средств для покупки")
+
+    elif body.direction == "SELL":
+        if not hasattr(body, "price") or body.price is None:
+            # MARKET — ищем лучшую встречную заявку BUY
+            counter_orders = (await db.execute(
+                select(OrderORM).where(
+                    and_(
+                        OrderORM.ticker == body.ticker,
+                        OrderORM.direction == "BUY",
+                        OrderORM.status == "NEW"
+                    )
+                )
+            )).scalars().all()
+            if not counter_orders:
+                raise HTTPException(status_code=400,
+                                    detail="Нет встречных заявок для исполнения MARKET-ордерa (продажа)")
+        if balances.get(body.ticker, 0) < body.qty:
+            raise HTTPException(status_code=400, detail=f"Недостаточно {body.ticker} для продажи")
+
+    # ========================
+    # 1. Создаем объект ордера
+    order_id = uuid.uuid4()
+    now = datetime.now(timezone.utc)
+
+    is_limit = hasattr(body, "price") and body.price is not None
+
+    order = OrderORM(
+        id=order_id,
+        user_id=user.id,
+        ticker=body.ticker,
+        direction=body.direction,
+        qty=body.qty,
+        price=body.price if is_limit else None,
+        type="LIMIT" if is_limit else "MARKET",
+        status="NEW",
+        filled=0,
+        timestamp=now
+    )
+
+    db.add(order)
+    await db.flush()  # Получаем id и подготавливаем к matching
+
+    # 2. Matching engine — исполнение сделки и обновление стакана/балансов
+    await match_order(order, db)
+
+    # 3. Отправляем ответ
+    return CreateOrderResponse(success=True, order_id=order_id)
+
+
+from fastapi import APIRouter, Depends, Header
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+from app.models.order import Order as OrderORM
+from app.schemas.order import LimitOrder, MarketOrder
+from app.dependencies import get_db
+from app.core.security import get_current_user
+
+
+@router.get(
+    "/order",
+    response_model=list[LimitOrder | MarketOrder],
+    tags=["order"]
+)
 async def list_orders(
     db: AsyncSession = Depends(get_db),
     authorization: str = Header(None),
     user=Depends(get_current_user)
 ):
+    # Возвращаем ВСЕ ордера пользователя
     result = await db.execute(
-        select(OrderORM).where(OrderORM.user_id == str(user.id))
+        select(OrderORM).where(OrderORM.user_id == user.id)
     )
-    orm_orders = result.scalars().all()
-    return [orm_to_pydantic_order(order) for order in orm_orders]
+    orders = result.scalars().all()
+    return [order_to_schema(o) for o in orders]
 
-
-
-@router.get("/order/{order_id}", response_model=OrderModel)
-async def get_order_by_id(
-    order_id: UUID = Path(..., title="Order Id"),
+@router.get(
+    "/order/{order_id}",
+    response_model=LimitOrder | MarketOrder,
+    tags=["order"]
+)
+async def get_order(
+    order_id: str,
     db: AsyncSession = Depends(get_db),
     authorization: str = Header(None),
     user=Depends(get_current_user)
 ):
-    order = await db.get(OrderORM, str(order_id))
-    if not order or order.user_id != str(user.id):
+    result = await db.execute(
+        select(OrderORM).where(OrderORM.id == uuid.UUID(order_id), OrderORM.user_id == user.id)
+    )
+    order = result.scalar_one_or_none()
+    if not order:
         raise HTTPException(status_code=404, detail="Order not found")
-    return orm_to_pydantic_order(order)
-
-
-from app.schemas.ok import Ok  # Ok: BaseModel с success: True
+    return order_to_schema(order)
+from fastapi import status
 
 @router.delete(
     "/order/{order_id}",
-    response_model=Ok,
     tags=["order"]
 )
-async def cancel_order_by_id(
-    order_id: UUID = Path(..., title="Order Id"),
+async def delete_order(
+    order_id: str,
     db: AsyncSession = Depends(get_db),
+    authorization: str = Header(None),
     user=Depends(get_current_user)
 ):
-    order = await db.get(OrderORM, str(order_id))
-    if not order or order.user_id != str(user.id):
+    # 1. Находим ордер по id и пользователю
+    result = await db.execute(
+        select(OrderORM).where(
+            OrderORM.id == uuid.UUID(order_id),
+            OrderORM.user_id == user.id
+        )
+    )
+    order = result.scalar_one_or_none()
+    if not order:
         raise HTTPException(status_code=404, detail="Order not found")
-    if order.status != OrderStatus.NEW:
-        raise HTTPException(status_code=400, detail="Cannot cancel this order")
-    order.status = OrderStatus.CANCELLED
+    # 2. Проверяем, что ордер можно отменить
+    if order.type != "LIMIT" or order.status != "NEW":
+        raise HTTPException(status_code=400, detail="Order cannot be cancelled")
+    # 3. Ставим статус CANCELLED вместо удаления
+    order.status = "CANCELLED"
     await db.commit()
     return {"success": True}

@@ -16,17 +16,21 @@ router = APIRouter()
 async def get_transaction_history(
     ticker: str = Path(..., pattern="^[A-Z]{2,10}$"),
     limit: int = Query(10, ge=1, le=100),
-
     db: AsyncSession = Depends(get_db)
 ):
-    # Проверка существования тикера
-    instrument = await db.get(InstrumentORM, ticker)
-    if not instrument:
+    # 1) Корректная проверка инструмента
+    res = await db.execute(
+        select(InstrumentORM).where(InstrumentORM.ticker == ticker)
+    )
+    if not res.scalar_one_or_none():
         raise HTTPException(status_code=404, detail="Instrument not found")
 
+    # 2) Отдаём сделки в хронологическом порядке (старые → новые)
     result = await db.execute(
-        select(TransactionORM).where(TransactionORM.ticker == ticker)
-        .order_by(TransactionORM.timestamp.desc())
-        .limit(limit)
+        select(TransactionORM)
+          .where(TransactionORM.ticker == ticker)
+          .order_by(TransactionORM.timestamp.asc())
+          .limit(limit)
     )
     return result.scalars().all()
+

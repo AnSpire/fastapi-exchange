@@ -51,15 +51,25 @@ async def test_full_user_flow_with_market_and_two_users():
         assert resp.json() == {"success": True}
 
     # --- Пополнение баланса обоим пользователям ---
-    for user_id in (user1_id, user2_id):
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-            resp = await ac.post("/api/v1/admin/balance/deposit", headers=admin_headers, json={
-                "user_id": user_id,
-                "ticker": ticker,
-                "amount": 1000,
-            })
-            assert resp.status_code == 200
-            assert resp.json() == {"success": True}
+    # User1: USD (для покупки MEMCOIN)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        resp = await ac.post("/api/v1/admin/balance/deposit", headers=admin_headers, json={
+            "user_id": user1_id,
+            "ticker": "USD",
+            "amount": 1000,
+        })
+        assert resp.status_code == 200
+        assert resp.json() == {"success": True}
+
+    # User2: MEMCOIN (для продажи)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        resp = await ac.post("/api/v1/admin/balance/deposit", headers=admin_headers, json={
+            "user_id": user2_id,
+            "ticker": ticker,
+            "amount": 1000,
+        })
+        assert resp.status_code == 200
+        assert resp.json() == {"success": True}
 
     # --- Проверка баланса пользователей ---
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:

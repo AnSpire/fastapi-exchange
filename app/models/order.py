@@ -2,8 +2,9 @@
 from sqlalchemy import Column, String, Integer, DateTime, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID
 from app.db.base import Base
-import datetime
 import uuid
+from datetime import datetime, timezone
+from sqlalchemy import Column, Integer
 
 class Order(Base):
     __tablename__ = "order"
@@ -15,4 +16,6 @@ class Order(Base):
     qty = Column(Integer)
     price = Column(Integer, nullable=True)  # nullable только для MARKET
     status = Column(String, default="NEW")
-    timestamp = Column(DateTime, default=datetime.datetime.utcnow)
+    filled = Column(Integer, default=0, nullable=False)   # <--- ВАЖНО!
+    timestamp = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+

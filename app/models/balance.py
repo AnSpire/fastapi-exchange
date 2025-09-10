@@ -6,6 +6,6 @@ import uuid
 
 class Balance(Base):
     __tablename__ = "balance"
-    user_id = Column(UUID(as_uuid=True), ForeignKey("user.id"), primary_key=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("user.id", ondelete="CASCADE"), primary_key=True)
     ticker = Column(String(10), primary_key=True)
     amount = Column(Integer, nullable=False, default=0)
