@@ -14,3 +14,4 @@ nohup*.out
 .idea/
 .DS_Store
 tree.txt
+.env
