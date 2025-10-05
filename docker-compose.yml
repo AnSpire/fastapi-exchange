@@ -1,0 +1,30 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:17
+    container_name: fastapi_db
+    restart: always
+    environment:
+      POSTGRES_USER: anspire
+      POSTGRES_PASSWORD: 1111
+      POSTGRES_DB: fastapi_project
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  web:
+    build: .
+    container_name: fastapi_app
+    restart: always
+    depends_on:
+      - db
+    environment:
+      DATABASE_URL_ASYNC: postgresql+asyncpg://anspire:1111@db:5432/fastapi_project
+      DATABASE_URL_SYNC: postgresql+psycopg2://anspire:1111@db:5432/fastapi_project
+    ports:
+      - "8000:8000"
+
+volumes:
+  postgres_data:

@@ -1,17 +1,42 @@
-# 1. Используем официальный образ python
-FROM python:3.11
+# ---- 1. Билд-зависимости ----
+FROM python:3.13-slim AS builder
 
-# 2. Устанавливаем рабочую директорию
 WORKDIR /app
 
-# 3. Копируем файлы проекта
+# Установим зависимости для сборки psycopg2 и других пакетов
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential libpq-dev gcc \
+    && rm -rf /var/lib/apt/lists/*
+
+# Скопируем зависимости
+COPY pyproject.toml uv.lock ./
+
+# Установим uv
+RUN pip install uv
+
+# Установим зависимости в отдельное окружение
+RUN uv sync --frozen
+
+# ---- 2. Финальный образ ----
+FROM python:3.13-slim
+
+WORKDIR /app
+
+# Скопируем окружение из builder
+COPY --from=builder /app/.venv /app/.venv
+
+# Используем .venv как интерпретатор по умолчанию
+ENV PATH="/app/.venv/bin:$PATH"
+
+# Копируем всё приложение
 COPY . .
 
-# 4. Устанавливаем зависимости
-RUN pip install --no-cache-dir -i https://mirrors.aliyun.com/pypi/simple/ -r requirements.txt
+# Укажем переменные окружения
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
 
-# 5. Открываем порт (если нужно)
+# Экспонируем порт
 EXPOSE 8000
 
-# 6. Запуск приложения через uvicorn
+# Запуск через uvicorn
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

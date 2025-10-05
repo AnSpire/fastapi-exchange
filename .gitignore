@@ -1,17 +1,52 @@
-# python
+# --- Python ---
 __pycache__/
-*.pyc
+*.py[cod]
+*.pyo
+*.pyd
 
-# venv
+# --- Virtualenv / uv ---
 venv/
+.venv/
+uv.lock
 
-# db and logs
-*.db
+# --- Alembic ---
+alembic/**/__pycache__/
+**/versions_old/
+
+# --- Logs / runtime ---
+*.log
+*.out
 nohup*.out
+*.db
+server.log
 
-# archives, IDE, and misc
-*.tar
-.idea/
+# --- OS / misc ---
 .DS_Store
+Thumbs.db
 tree.txt
+
+# --- IDE ---
+.idea/
+.vscode/
+
+# --- Env / secrets ---
 .env
+.env.*
+
+# --- Build / packaging ---
+*.egg-info/
+.eggs/
+dist/
+build/
+*.egg
+
+# --- Tests / coverage ---
+.coverage
+htmlcov/
+.cache/
+.pytest_cache/
+.tox/
+.mypy_cache/
+.dmypy.json
+.pyre/
+.pytype/
