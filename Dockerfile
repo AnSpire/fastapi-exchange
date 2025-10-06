@@ -1,5 +1,5 @@
 # ---- 1. Билд-зависимости ----
-FROM python:3.13-slim AS builder
+FROM python:3.13-slim-bookworm AS builder
 
 WORKDIR /app
 
