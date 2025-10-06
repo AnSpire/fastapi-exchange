@@ -8,7 +8,7 @@ __pycache__/
 venv/
 .venv/
 uv.lock
-re*.txt
+req*.txt
 
 # --- Alembic ---
 alembic/**/__pycache__/

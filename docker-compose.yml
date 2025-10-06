@@ -21,8 +21,8 @@ services:
     depends_on:
       - db
     environment:
-      DATABASE_URL_ASYNC: postgresql+asyncpg://anspire:1111@db:5432/fastapi_project
-      DATABASE_URL_SYNC: postgresql+psycopg2://anspire:1111@db:5432/fastapi_project
+      DATABASE_URL_ASYNC: ${DATABASE_URL}
+      DATABASE_URL_SYNC: ${ALEMBIC_DATABASE_URL}
     ports:
       - "8000:8000"
 
